@@ -2,8 +2,8 @@ name: Surveillance Cave a Liqueur
 
 on:
   schedule:
-    - cron: '0 * * * *'  # S'exécute automatiquement toutes les heures
-  workflow_dispatch:      # Permet de lancer un test manuel quand vous voulez
+    - cron: '0 * * * *'
+  workflow_dispatch:
 
 jobs:
   run-tracker:
@@ -25,3 +25,11 @@ jobs:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_PASS: ${{ secrets.GMAIL_PASS }}
         run: python tracker.py
+
+      - name: Publier la mise à jour de la page web
+        run: |
+          git config --global user.name "GitHub Action Tracker"
+          git config --global user.email "tracker@actions.github.com"
+          git add index.html annonces_vues.db || true
+          git commit -m "Mise à jour du tableau de bord" || exit 0
+          git push
