@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 import feedparser
 import requests
 
-DEST_EMAIL = "malohartmann@gmail.com"
+DEST_EMAIL = os.environ.get("GMAIL_USER")
 GMAIL_USER = os.environ.get("GMAIL_USER")
 GMAIL_PASS = os.environ.get("GMAIL_PASS")
 
