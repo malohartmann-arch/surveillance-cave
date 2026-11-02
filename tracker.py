@@ -7,7 +7,6 @@ from bs4 import BeautifulSoup
 import feedparser
 import requests
 
-# Destinataire et identifiants
 DEST_EMAIL = "malohartmann@gmail.com"
 GMAIL_USER = os.environ.get("GMAIL_USER")
 GMAIL_PASS = os.environ.get("GMAIL_PASS")
@@ -15,7 +14,6 @@ GMAIL_PASS = os.environ.get("GMAIL_PASS")
 DB_FILE = "annonces_vues.db"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
-# Pondération des indices suspects
 KEYWORDS_SCORE = {
     "15 verres": 45,
     "manque 1 verre": 45,
@@ -87,8 +85,9 @@ def calculer_score(titre, description):
 
 
 def envoyer_alerte(source, titre, url, description, score, indices):
+  print(f"[ALERTE] Envoi email pour '{titre}' (Score: {score})")
   if not GMAIL_USER or not GMAIL_PASS:
-    print(f"[{source}] {titre} - Score: {score} -> {url}")
+    print("Identifiants Gmail absents, envoi ignoré.")
     return
 
   msg = MIMEMultipart()
@@ -98,21 +97,24 @@ def envoyer_alerte(source, titre, url, description, score, indices):
       f"🚨 [{source.upper()}] Cave à liqueur détectée (Score: {score})"
   )
 
-  corps = f"""
-Source : {source}
+  corps = f"""Source : {source}
 Titre : {titre}
 Lien : {url}
 Score de suspicion : {score}
-Indices repérés : {', '.join(indices) if indices else 'Aucun mot-clé spécifique'}
+Indices repérés : {', '.join(indices) if indices else 'Aucun'}
 
 Extrait :
 {description[:800]}
 """
   msg.attach(MIMEText(corps, "plain"))
 
-  with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-    server.login(GMAIL_USER, GMAIL_PASS)
-    server.sendmail(GMAIL_USER, DEST_EMAIL, msg.as_string())
+  try:
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+      server.login(GMAIL_USER, GMAIL_PASS)
+      server.sendmail(GMAIL_USER, DEST_EMAIL, msg.as_string())
+    print("-> Email envoyé avec succès !")
+  except Exception as e:
+    print(f"Erreur d'envoi Gmail : {e}")
 
 
 def scanner_interencheres_et_ebay():
@@ -135,7 +137,9 @@ def scanner_interencheres_et_ebay():
       ),
   ]
   for source, url in flux_urls:
+    print(f"Scrutage {source}...")
     feed = feedparser.parse(url)
+    print(f"  {len(feed.entries)} éléments trouvés sur {source}.")
     for entry in feed.entries:
       aid = entry.get("id", entry.link)
       if annonce_deja_vue(aid):
@@ -153,26 +157,24 @@ def scanner_interencheres_et_ebay():
 
 
 def scanner_proantic():
+  print("Scrutage Proantic...")
   try:
     url = "https://www.proantic.com/recherche.php?search=cave+a+liqueur"
     resp = requests.get(url, headers=HEADERS, timeout=15)
     soup = BeautifulSoup(resp.text, "html.parser")
-
-    # Parcours des fiches d'antiquaires
-    for card in soup.select("a.item-link, div.fiche-item"):
+    items = soup.select("a.item-link, div.fiche-item")
+    print(f"  {len(items)} éléments trouvés sur Proantic.")
+    for card in items:
       link_tag = card if card.name == "a" else card.find("a")
       if not link_tag or not link_tag.get("href"):
         continue
-
       href = link_tag.get("href")
       full_url = (
           href if href.startswith("http") else f"https://www.proantic.com/{href}"
       )
       title = card.get_text(strip=True)
-
       if annonce_deja_vue(full_url):
         continue
-
       score, indices = calculer_score(title, "")
       enregistrer_annonce(full_url, title, full_url, score)
       envoyer_alerte("Proantic", title, full_url, title, score, indices)
@@ -181,12 +183,14 @@ def scanner_proantic():
 
 
 def scanner_selency():
+  print("Scrutage Selency...")
   try:
     url = "https://www.selency.fr/recherche?q=cave+a+liqueur"
     resp = requests.get(url, headers=HEADERS, timeout=15)
     soup = BeautifulSoup(resp.text, "html.parser")
-
-    for card in soup.select("article a, a[data-testid='product-card']"):
+    items = soup.select("article a, a[data-testid='product-card']")
+    print(f"  {len(items)} éléments trouvés sur Selency.")
+    for card in items:
       href = card.get("href")
       if not href:
         continue
@@ -194,10 +198,8 @@ def scanner_selency():
           href if href.startswith("http") else f"https://www.selency.fr{href}"
       )
       title = card.get_text(strip=True)
-
       if annonce_deja_vue(full_url):
         continue
-
       score, indices = calculer_score(title, "")
       enregistrer_annonce(full_url, title, full_url, score)
       envoyer_alerte("Selency", title, full_url, title, score, indices)
@@ -210,3 +212,4 @@ if __name__ == "__main__":
   scanner_interencheres_et_ebay()
   scanner_proantic()
   scanner_selency()
+  print("Cycle de surveillance terminé avec succès.")
